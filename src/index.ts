@@ -1,3 +1,5 @@
+// Version: 1.0.0
+// Description: Air Quality Augmentos App
 import 'dotenv/config';
 import express from 'express';
 import path from 'path';
