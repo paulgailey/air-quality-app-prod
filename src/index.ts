@@ -143,7 +143,8 @@ class AirQualityApp extends TpaServer {
     // ⛑ Fallback: Initial display (if no SDK location arrives)
     setTimeout(() => {
       if (!session.location?.latitude) {
-        this.checkAirQuality(session).catch(console.error);
+        console.log("📍 No location detected, showing London by default.");
+        this.checkAirQuality(session, 51.5074, -0.1278).catch(console.error);
       }
     }, 2000);
   }
