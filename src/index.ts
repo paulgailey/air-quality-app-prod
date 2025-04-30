@@ -179,18 +179,18 @@ class AirQualityApp extends TpaServer {
       }
     }, 1500);
 
-    // Second fallback: Try browser IP location if SDK location fails
+    // Second fallback: Try headers & IP location if SDK location fails
     setTimeout(async () => {
       const sessionData = this.activeSessions.get(sessionId);
       if (sessionData && !sessionData.locationObtained) {
-        console.log(`📍 No SDK location detected for ${sessionId}, trying IP geolocation...`);
+        console.log(`📍 No SDK location detected for ${sessionId}, trying header/IP geolocation...`);
         try {
-          const ipLocation = await this.getIpBasedLocation(session.request?.ip);
-          console.log(`📍 IP location for ${sessionId}: ${ipLocation.lat}, ${ipLocation.lon}`);
+          const ipLocation = await this.getIpBasedLocation(session);
+          console.log(`📍 IP/header location for ${sessionId}: ${ipLocation.lat}, ${ipLocation.lon}`);
           await this.checkAirQuality(session, ipLocation.lat, ipLocation.lon);
           sessionData.locationObtained = true;
         } catch (error) {
-          console.error(`IP geolocation failed for ${sessionId}:`, error);
+          console.error(`IP/header geolocation failed for ${sessionId}:`, error);
           // Last resort fallback
           console.log(`📍 Using default location for ${sessionId}`);
           await this.checkAirQuality(session, 51.5074, -0.1278);
@@ -235,7 +235,7 @@ class AirQualityApp extends TpaServer {
         coords = { lat: session.location.latitude, lon: session.location.longitude };
         console.log(`Using session.location: ${coords.lat}, ${coords.lon}`);
       } else {
-        coords = await this.getIpBasedLocation(session.request?.ip);
+        coords = await this.getIpBasedLocation(session);
         console.log(`Using IP-based location: ${coords.lat}, ${coords.lon}`);
       }
 
@@ -258,9 +258,42 @@ class AirQualityApp extends TpaServer {
     }
   }
 
-  private async getIpBasedLocation(ip?: string): Promise<{ lat: number, lon: number }> {
+  private async getIpBasedLocation(session: TpaSession): Promise<{ lat: number, lon: number }> {
     try {
-      // If we have the client IP, use it
+      // Check for Fly.io geolocation headers first
+      if (session.request?.headers) {
+        const headers = session.request.headers;
+        console.log("Available headers:", Object.keys(headers).join(", "));
+        
+        // Fly.io specific geo headers
+        if (headers['fly-geo-lat'] && headers['fly-geo-long']) {
+          const lat = parseFloat(headers['fly-geo-lat']);
+          const lon = parseFloat(headers['fly-geo-long']);
+          console.log(`Using Fly.io geo headers: ${lat}, ${lon}`);
+          return { lat, lon };
+        }
+        
+        // CF-IPCountry or similar headers
+        if (headers['cf-ipcountry'] || headers['x-country-code']) {
+          console.log(`Country code detected: ${headers['cf-ipcountry'] || headers['x-country-code']}`);
+        }
+        
+        // Get real client IP from Fly headers
+        const clientIp = headers['fly-client-ip'] || 
+                        headers['x-forwarded-for'] || 
+                        headers['x-real-ip'] ||
+                        ip;
+                        
+        if (clientIp && clientIp !== '127.0.0.1' && clientIp !== 'localhost') {
+          console.log(`Attempting geolocation for client IP: ${clientIp}`);
+          const ipLocation = await axios.get(`https://ipapi.co/${clientIp}/json/`, { timeout: 3000 });
+          if (ipLocation.data.latitude && ipLocation.data.longitude) {
+            return { lat: ipLocation.data.latitude, lon: ipLocation.data.longitude };
+          }
+        }
+      }
+      
+      // If we have the session IP, use it
       if (ip && ip !== '127.0.0.1' && ip !== 'localhost') {
         console.log(`Attempting geolocation for IP: ${ip}`);
         const ipLocation = await axios.get(`https://ipapi.co/${ip}/json/`, { timeout: 3000 });
@@ -269,7 +302,7 @@ class AirQualityApp extends TpaServer {
         }
       }
       
-      // Try to get server IP location
+      // Last resort: server IP location
       console.log(`Attempting geolocation for server IP`);
       const serverIp = await axios.get('https://ipapi.co/json/', { timeout: 3000 });
       if (serverIp.data.latitude && serverIp.data.longitude) {
@@ -279,7 +312,7 @@ class AirQualityApp extends TpaServer {
       console.warn("IP geolocation failed:", error);
     }
     
-    console.log("IP geolocation failed, falling back to default location");
+    console.log("All geolocation methods failed, falling back to default location");
     return { lat: 51.5074, lon: -0.1278 }; // London fallback
   }
 }
