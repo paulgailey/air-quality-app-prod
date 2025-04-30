@@ -195,7 +195,7 @@ class AirQualityApp extends TpaServer {
           console.error(`IP/header geolocation failed for ${sessionId}:`, error);
           // Last resort fallback
           console.log(`📍 Using default location for ${sessionId}`);
-          await this.checkAirQuality(session, 51.5074, -0.1278);
+          await this.checkAirQuality(session, 51.5074, -0.1278, true);
         }
       }
     }, 3000);
@@ -225,7 +225,7 @@ class AirQualityApp extends TpaServer {
     }
   }
 
-  private async checkAirQuality(session: TpaSession, lat?: number, lon?: number): Promise<void> {
+  private async checkAirQuality(session: TpaSession, lat?: number, lon?: number, isFallback = false): Promise<void> {
     try {
       console.log(`CheckAirQuality called with lat: ${lat}, lon: ${lon}`);
       let coords;
@@ -243,7 +243,7 @@ class AirQualityApp extends TpaServer {
 
       const station = await this.getNearestAQIStation(coords.lat, coords.lon);
       const quality = AQI_LEVELS.find(l => station.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
-
+      const locationNote = isFallback ? " (default location used)" : "";
       await session.layouts.showTextWall(
         `📍 ${station.station.name}\n\n` +
         `Air Quality: ${quality.label} ${quality.emoji}\n` +
