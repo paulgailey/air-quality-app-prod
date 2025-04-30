@@ -6,7 +6,7 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { readFileSync } from 'fs';
 
-// Configuration (15 lines)
+// Configuration
 const packageJson = JSON.parse(
   readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
 );
@@ -16,13 +16,13 @@ const PACKAGE_NAME = process.env.PACKAGE_NAME || 'com.everywoah.airquality';
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
 const AQI_TOKEN = process.env.AQI_TOKEN;
 
-// Validate environment (8 lines)
+// Validate environment
 if (!AUGMENTOS_API_KEY || !AQI_TOKEN) {
   console.error('❌ Missing required environment variables');
   process.exit(1);
 }
 
-// AQI Levels (15 lines)
+// AQI Levels
 const AQI_LEVELS = [
   { max: 50, label: "Good", emoji: "😊", advice: "Perfect for outdoor activities!" },
   { max: 100, label: "Moderate", emoji: "😐", advice: "Acceptable air quality" },
@@ -32,7 +32,7 @@ const AQI_LEVELS = [
   { max: Infinity, label: "Hazardous", emoji: "☢️", advice: "Stay indoors with windows closed" }
 ];
 
-interface AQIStationData {  // (7 lines)
+interface AQIStationData {
   aqi: number;
   station: {
     name: string;
@@ -40,10 +40,11 @@ interface AQIStationData {  // (7 lines)
   };
 }
 
-class AirQualityApp extends TpaServer {  // (220 lines total)
+class AirQualityApp extends TpaServer {
   private activeSessions = new Map<string, { userId: string; started: Date }>();
   private requestCount = 0;
-  private readonly VOICE_COMMANDS = [  // (8 lines)
+
+  private readonly VOICE_COMMANDS = [
     "air quality",
     "what's the air like",
     "pollution",
@@ -52,7 +53,7 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
     "nearest air quality station"
   ];
 
-  constructor() {  // (7 lines)
+  constructor() {
     super({
       packageName: PACKAGE_NAME,
       apiKey: AUGMENTOS_API_KEY,
@@ -62,10 +63,10 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
     this.setupRoutes();
   }
 
-  private setupRoutes(): void {  // (60 lines)
+  private setupRoutes(): void {
     const app = this.getExpressApp();
 
-    // Middleware (15 lines)
+    // Middleware
     app.use((req, res, next) => {
       this.requestCount++;
       const requestId = crypto.randomUUID();
@@ -75,7 +76,7 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
     });
     app.use(express.json());
 
-    // Routes (45 lines)
+    // Routes
     app.get('/', (req, res) => {
       res.json({
         status: "running",
@@ -121,9 +122,16 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
     });
   }
 
-  protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {  // (30 lines)
+  protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
     this.activeSessions.set(sessionId, { userId, started: new Date() });
 
+    // 🔍 PRIORITY: Use SDK location callback first
+    session.events.onLocation(async (coords) => {
+      console.log(`📍 Using coordinates: ${coords.lat}, ${coords.lon}`);
+      await this.checkAirQuality(session, coords.lat, coords.lon);
+    });
+
+    // 🎤 Voice command trigger
     session.onTranscriptionForLanguage('en-US', (transcript) => {
       const text = transcript.text.toLowerCase();
       console.log(`🎤 Heard: "${text}"`);
@@ -132,10 +140,15 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
       }
     });
 
-    await this.checkAirQuality(session);
+    // ⛑ Fallback: Initial display (if no SDK location arrives)
+    setTimeout(() => {
+      if (!session.location?.latitude) {
+        this.checkAirQuality(session).catch(console.error);
+      }
+    }, 2000);
   }
 
-  private async getNearestAQIStation(lat: number, lon: number): Promise<AQIStationData> {  // (20 lines)
+  private async getNearestAQIStation(lat: number, lon: number): Promise<AQIStationData> {
     try {
       const response = await axios.get(
         `https://api.waqi.info/feed/geo:${lat};${lon}/?token=${AQI_TOKEN}`,
@@ -157,15 +170,17 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
     }
   }
 
-  private async checkAirQuality(session: TpaSession): Promise<void> {  // (25 lines)
+  private async checkAirQuality(session: TpaSession, lat?: number, lon?: number): Promise<void> {
     try {
-      const coords = session.location?.latitude 
+      const coords = lat && lon
+        ? { lat, lon }
+        : session.location?.latitude
         ? { lat: session.location.latitude, lon: session.location.longitude }
         : await this.getApproximateCoords();
-      
+
       const station = await this.getNearestAQIStation(coords.lat, coords.lon);
       const quality = AQI_LEVELS.find(l => station.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
-      
+
       await session.layouts.showTextWall(
         `📍 ${station.station.name}\n\n` +
         `Air Quality: ${quality.label} ${quality.emoji}\n` +
@@ -182,7 +197,7 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
     }
   }
 
-  private async getApproximateCoords(): Promise<{ lat: number, lon: number }> {  // (15 lines)
+  private async getApproximateCoords(): Promise<{ lat: number, lon: number }> {
     try {
       const ip = await axios.get('https://ipapi.co/json/', { timeout: 2000 });
       if (ip.data.latitude && ip.data.longitude) {
@@ -195,7 +210,6 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
   }
 }
 
-// Server Startup (10 lines)
 new AirQualityApp().getExpressApp().listen(PORT, () => {
   console.log(`✅ Air Quality v${APP_VERSION} running on port ${PORT}`);
 });
