@@ -223,7 +223,7 @@ class AirQualityApp extends TpaServer {
       
       let locationMessage = `📍 ${station.station.name}`;
       if (isFallback) {
-        locationMessage = `⚠️ ${station.station.name} (default location - enable GPS for accurate results)`;
+        locationMessage = `⚠️ ${station.station.name} (default - device location unavailable)`;
       }
 
       await session.layouts.showTextWall(
