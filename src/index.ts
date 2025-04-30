@@ -41,7 +41,12 @@ interface AQIStationData {
 }
 
 class AirQualityApp extends TpaServer {
-  private activeSessions = new Map<string, { userId: string; started: Date }>();
+  private activeSessions = new Map<string, { 
+    userId: string; 
+    started: Date;
+    locationAttempted: boolean;
+    locationObtained: boolean;
+  }>();
   private requestCount = 0;
 
   private readonly VOICE_COMMANDS = [
@@ -111,6 +116,7 @@ class AirQualityApp extends TpaServer {
             userId: req.body.userId,
             packageName: PACKAGE_NAME
           });
+          console.log(`Session initialized: ${req.body.sessionId} for user ${req.body.userId}`);
           res.json({ status: 'success' });
         } catch (error) {
           console.error('Session init failed:', error);
@@ -123,41 +129,87 @@ class AirQualityApp extends TpaServer {
   }
 
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
-    this.activeSessions.set(sessionId, { userId, started: new Date() });
+    this.activeSessions.set(sessionId, { 
+      userId, 
+      started: new Date(),
+      locationAttempted: false,
+      locationObtained: false
+    });
 
-    // 🔍 PRIORITY: Use SDK location callback first
+    console.log(`New session ${sessionId} started for user ${userId}`);
+    
+    // Explicitly request location
+    try {
+      const sessionData = this.activeSessions.get(sessionId);
+      if (sessionData) {
+        sessionData.locationAttempted = true;
+      }
+      await session.requestLocation();
+      console.log(`Location requested for session ${sessionId}`);
+    } catch (error) {
+      console.error(`Failed to request location for session ${sessionId}:`, error);
+    }
+
+    // 🔍 PRIORITY: SDK location callback
     session.events.onLocation(async (coords) => {
-      console.log(`📍 Using coordinates: ${coords.lat}, ${coords.lon}`);
+      console.log(`📍 Received coordinates from SDK: ${coords.lat}, ${coords.lon}`);
+      const sessionData = this.activeSessions.get(sessionId);
+      if (sessionData) {
+        sessionData.locationObtained = true;
+      }
       await this.checkAirQuality(session, coords.lat, coords.lon);
     });
 
     // 🎤 Voice command trigger
     session.onTranscriptionForLanguage('en-US', (transcript) => {
       const text = transcript.text.toLowerCase();
-      console.log(`🎤 Heard: "${text}"`);
+      console.log(`🎤 Heard: "${text}" for session ${sessionId}`);
       if (this.VOICE_COMMANDS.some(cmd => text.includes(cmd.toLowerCase()))) {
         this.checkAirQuality(session).catch(console.error);
       }
     });
 
-    // ⛑ Fallback: Initial display (if no SDK location arrives)
-    setTimeout(() => {
-      if (!session.location?.latitude) {
-        console.log("📍 No location detected, showing London by default.");
-        this.checkAirQuality(session, 51.5074, -0.1278).catch(console.error);
+    // First fallback: Check if session has location after a delay
+    setTimeout(async () => {
+      const sessionData = this.activeSessions.get(sessionId);
+      if (sessionData && !sessionData.locationObtained && session.location?.latitude) {
+        console.log(`📍 Using session.location after delay for ${sessionId}: ${session.location.latitude}, ${session.location.longitude}`);
+        sessionData.locationObtained = true;
+        await this.checkAirQuality(session, session.location.latitude, session.location.longitude);
       }
-    }, 2000);
+    }, 1500);
+
+    // Second fallback: Try browser IP location if SDK location fails
+    setTimeout(async () => {
+      const sessionData = this.activeSessions.get(sessionId);
+      if (sessionData && !sessionData.locationObtained) {
+        console.log(`📍 No SDK location detected for ${sessionId}, trying IP geolocation...`);
+        try {
+          const ipLocation = await this.getIpBasedLocation(session.request?.ip);
+          console.log(`📍 IP location for ${sessionId}: ${ipLocation.lat}, ${ipLocation.lon}`);
+          await this.checkAirQuality(session, ipLocation.lat, ipLocation.lon);
+          sessionData.locationObtained = true;
+        } catch (error) {
+          console.error(`IP geolocation failed for ${sessionId}:`, error);
+          // Last resort fallback
+          console.log(`📍 Using default location for ${sessionId}`);
+          await this.checkAirQuality(session, 51.5074, -0.1278);
+        }
+      }
+    }, 3000);
   }
 
   private async getNearestAQIStation(lat: number, lon: number): Promise<AQIStationData> {
     try {
+      console.log(`Fetching AQI data for coordinates: ${lat}, ${lon}`);
       const response = await axios.get(
         `https://api.waqi.info/feed/geo:${lat};${lon}/?token=${AQI_TOKEN}`,
-        { timeout: 3000 }
+        { timeout: 5000 } // Increased timeout
       );
       if (response.data.status !== 'ok') {
         throw new Error(response.data.data || 'Station data unavailable');
       }
+      console.log(`AQI data received: ${response.data.data.aqi} from ${response.data.data.city?.name || 'Unknown station'}`);
       return {
         aqi: response.data.data.aqi,
         station: {
@@ -173,11 +225,19 @@ class AirQualityApp extends TpaServer {
 
   private async checkAirQuality(session: TpaSession, lat?: number, lon?: number): Promise<void> {
     try {
-      const coords = lat && lon
-        ? { lat, lon }
-        : session.location?.latitude
-        ? { lat: session.location.latitude, lon: session.location.longitude }
-        : await this.getApproximateCoords();
+      console.log(`CheckAirQuality called with lat: ${lat}, lon: ${lon}`);
+      let coords;
+      
+      if (lat && lon) {
+        coords = { lat, lon };
+        console.log(`Using provided coordinates: ${lat}, ${lon}`);
+      } else if (session.location?.latitude && session.location?.longitude) {
+        coords = { lat: session.location.latitude, lon: session.location.longitude };
+        console.log(`Using session.location: ${coords.lat}, ${coords.lon}`);
+      } else {
+        coords = await this.getIpBasedLocation(session.request?.ip);
+        console.log(`Using IP-based location: ${coords.lat}, ${coords.lon}`);
+      }
 
       const station = await this.getNearestAQIStation(coords.lat, coords.lon);
       const quality = AQI_LEVELS.find(l => station.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
@@ -187,26 +247,39 @@ class AirQualityApp extends TpaServer {
         `Air Quality: ${quality.label} ${quality.emoji}\n` +
         `AQI: ${station.aqi}\n\n` +
         `${quality.advice}`,
-        { view: ViewType.MAIN, durationMs: 10000 }
+        { view: ViewType.MAIN, durationMs: 15000 } // Increased display time
       );
     } catch (error) {
       console.error("Check failed:", error);
-      await session.layouts.showTextWall("Air quality unavailable", { 
+      await session.layouts.showTextWall("Air quality unavailable. Please try again.", { 
         view: ViewType.MAIN,
-        durationMs: 3000 
+        durationMs: 5000 
       });
     }
   }
 
-  private async getApproximateCoords(): Promise<{ lat: number, lon: number }> {
+  private async getIpBasedLocation(ip?: string): Promise<{ lat: number, lon: number }> {
     try {
-      const ip = await axios.get('https://ipapi.co/json/', { timeout: 2000 });
-      if (ip.data.latitude && ip.data.longitude) {
-        return { lat: ip.data.latitude, lon: ip.data.longitude };
+      // If we have the client IP, use it
+      if (ip && ip !== '127.0.0.1' && ip !== 'localhost') {
+        console.log(`Attempting geolocation for IP: ${ip}`);
+        const ipLocation = await axios.get(`https://ipapi.co/${ip}/json/`, { timeout: 3000 });
+        if (ipLocation.data.latitude && ipLocation.data.longitude) {
+          return { lat: ipLocation.data.latitude, lon: ipLocation.data.longitude };
+        }
+      }
+      
+      // Try to get server IP location
+      console.log(`Attempting geolocation for server IP`);
+      const serverIp = await axios.get('https://ipapi.co/json/', { timeout: 3000 });
+      if (serverIp.data.latitude && serverIp.data.longitude) {
+        return { lat: serverIp.data.latitude, lon: serverIp.data.longitude };
       }
     } catch (error) {
       console.warn("IP geolocation failed:", error);
     }
+    
+    console.log("IP geolocation failed, falling back to default location");
     return { lat: 51.5074, lon: -0.1278 }; // London fallback
   }
 }
