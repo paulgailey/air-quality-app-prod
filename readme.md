@@ -1,2 +1,2 @@
 # air-quality-app-sat
-Satisfactory dev release to production
+Satisfactory developer release to production
