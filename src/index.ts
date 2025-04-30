@@ -16,7 +16,7 @@ const PACKAGE_NAME = process.env.PACKAGE_NAME || 'com.everywoah.airquality';
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
 const AQI_TOKEN = process.env.AQI_TOKEN;
 
-// Validate environment
+// Validate environment -
 if (!AUGMENTOS_API_KEY || !AQI_TOKEN) {
   console.error('❌ Missing required environment variables');
   process.exit(1);
