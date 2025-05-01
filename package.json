@@ -1,26 +1,25 @@
-{
+﻿{
   "name": "air-quality-app",
   "version": "1.2.1",
   "type": "module",
   "augmentos": {
     "versionDisplay": "Air Quality v1.2.1",
-    "websocket": true 
+    "websocket": true
   },
   "scripts": {
-    "build": "echo 'No build needed'",
     "dev": "bun --hot src/index.ts",
-    "start": "bun src/index.ts",
+    "start": "bun --smol run src/index.ts",
     "docker:dev": "docker compose -f docker/docker-compose.dev.yml -p dev up",
     "test:connect": "bun test-websocket.ts"
   },
   "dependencies": {
-    "@augmentos/sdk": "^1.2.0",
-    "dotenv": "^16.5.0",
-    "express": "^4.21.2",
-    "axios": "^1.6.0"
+    "@augmentos/sdk": "1.1.4",
+    "axios": "1.8.4",
+    "dotenv": "16.5.0",
+    "express": "4.21.2"
   },
   "devDependencies": {
-    "@types/node": "^22",
-    "typescript": "^5.0.0"
+    "@types/node": "22.15.3",
+    "typescript": "5.8.3"
   }
 }
