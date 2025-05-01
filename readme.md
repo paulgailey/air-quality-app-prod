@@ -1,2 +1,2 @@
-# air-quality-app-sat
-Satisfactory developer release to production
+# air-quality-app-prod
+Cloudflare production release

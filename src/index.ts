@@ -1,7 +1,7 @@
-// Version: 1.2.1
-// Description: Air Quality Augmentos App - Fixed Location Handling
+// Version: 1.2.4
+// Description: Air Quality Augmentos App - Cloudflare Optimized
 import 'dotenv/config';
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import { TpaServer, TpaSession, ViewType } from '@augmentos/sdk';
 import axios from 'axios';
@@ -14,7 +14,7 @@ const packageJson = JSON.parse(
 );
 const APP_VERSION = packageJson.version;
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-const PACKAGE_NAME = process.env.PACKAGE_NAME || 'com.everywoah.airquality';
+const PACKAGE_NAME = process.env.PACKAGE_NAME || 'air-quality-app';
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
 const AQI_TOKEN = process.env.AQI_TOKEN;
 
@@ -42,14 +42,12 @@ interface AQIStationData {
   };
 }
 
-class AirQualityApp extends TpaServer {
-  private activeSessions = new Map<string, { 
-    userId: string; 
-    started: Date;
-    locationObtained: boolean;
-    lastLocation?: { lat: number; lon: number };
-  }>();
+interface SessionExtension {
+  locationObtained: boolean;
+  lastLocation?: { lat: number; lon: number };
+}
 
+class AirQualityApp extends TpaServer {
   private readonly VOICE_COMMANDS = [
     "air quality",
     "what's the air like",
@@ -61,28 +59,40 @@ class AirQualityApp extends TpaServer {
     "air pollution here"
   ];
 
+  private sessionExtensions = new Map<string, SessionExtension>();
+  private expressApp: express.Express;
+
   constructor() {
     super({
       packageName: PACKAGE_NAME,
       apiKey: AUGMENTOS_API_KEY,
       port: PORT,
       publicDir: path.join(__dirname, '../public'),
+      augmentOSWebsocketUrl: process.env.AUGMENTOS_WEBSOCKET_URL || 'wss://prod.augmentos.cloud/tpa-ws',
+      websocket: {
+        reconnect: true,
+        timeout: 15000
+      },
+      trustProxy: true
     });
+
+    this.expressApp = express();
     this.setupRoutes();
   }
 
   private setupRoutes(): void {
-    const app = this.getExpressApp();
-
-    // Middleware
-    app.use((req, res, next) => {
+    // Enhanced Cloudflare middleware
+    this.expressApp.use((req: Request, res: Response, next: NextFunction) => {
+      req.headers['cf-connecting-ip'] = req.headers['cf-connecting-ip'] || req.ip;
+      req.headers['x-device-latitude'] = req.headers['x-device-latitude'] || '';
+      req.headers['x-device-longitude'] = req.headers['x-device-longitude'] || '';
       res.set('X-Request-ID', crypto.randomUUID());
       next();
     });
-    app.use(express.json());
+    this.expressApp.use(express.json());
 
     // Routes
-    app.get('/', (req, res) => {
+    this.expressApp.get('/', (req: Request, res: Response) => {
       res.json({
         status: "running",
         version: APP_VERSION,
@@ -90,14 +100,15 @@ class AirQualityApp extends TpaServer {
       });
     });
 
-    app.get('/health', (req, res) => {
+    this.expressApp.get('/health', (req: Request, res: Response) => {
       res.json({
         status: "healthy",
-        sessions: this.activeSessions.size
+        sessions: this.sessionExtensions.size,
+        clientIp: req.headers['cf-connecting-ip'] || req.ip
       });
     });
 
-    app.get('/tpa_config.json', (req, res) => {
+    this.expressApp.get('/tpa_config.json', (req: Request, res: Response) => {
       res.json({
         voiceCommands: this.VOICE_COMMANDS.map(phrase => ({
           phrase,
@@ -108,10 +119,10 @@ class AirQualityApp extends TpaServer {
       });
     });
 
-    app.post('/webhook', async (req, res) => {
+    this.expressApp.post('/webhook', async (req: Request, res: Response) => {
       if (req.body?.type === 'session_request') {
         try {
-          await this.initTpaSession({
+          await this.initSession({
             sessionId: req.body.sessionId,
             userId: req.body.userId,
             packageName: PACKAGE_NAME
@@ -128,82 +139,64 @@ class AirQualityApp extends TpaServer {
   }
 
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
-    this.activeSessions.set(sessionId, { 
-      userId, 
-      started: new Date(),
+    await super.onSession(session, sessionId, userId);
+    this.sessionExtensions.set(sessionId, {
       locationObtained: false
     });
 
     console.log(`New session ${sessionId} started for user ${userId}`);
 
-    // 🔍 PRIORITY: SDK location callback
     session.events.onLocation(async (coords) => {
       console.log(`📍 Received coordinates from SDK: ${coords.lat}, ${coords.lon}`);
-      const sessionData = this.activeSessions.get(sessionId);
-      if (sessionData) {
-        sessionData.locationObtained = true;
-        sessionData.lastLocation = { lat: coords.lat, lon: coords.lon };
+      const ext = this.sessionExtensions.get(sessionId);
+      if (ext) {
+        ext.locationObtained = true;
+        ext.lastLocation = { lat: coords.lat, lon: coords.lon };
       }
       await this.showAirQuality(session, coords.lat, coords.lon, false);
     });
 
-    // 🎤 Voice command trigger
     session.onTranscriptionForLanguage('en-US', async (transcript) => {
       const text = transcript.text.toLowerCase();
       console.log(`🎤 Heard: "${text}" for session ${sessionId}`);
       
       if (this.VOICE_COMMANDS.some(cmd => text.includes(cmd.toLowerCase()))) {
-        const sessionData = this.activeSessions.get(sessionId);
-        if (sessionData?.lastLocation) {
-          // Use last known location if available
-          await this.showAirQuality(
-            session, 
-            sessionData.lastLocation.lat, 
-            sessionData.lastLocation.lon, 
-            false
-          );
+        const ext = this.sessionExtensions.get(sessionId);
+        if (ext?.lastLocation) {
+          await this.showAirQuality(session, ext.lastLocation.lat, ext.lastLocation.lon, false);
         } else {
-          // Try to get fresh location
           await this.handleAirQualityRequest(session, sessionId);
         }
       }
     });
 
-    // Initial location attempt
     setTimeout(() => {
       this.handleAirQualityRequest(session, sessionId).catch(console.error);
     }, 1000);
   }
 
   private async handleAirQualityRequest(session: TpaSession, sessionId: string): Promise<void> {
-    const sessionData = this.activeSessions.get(sessionId);
-    if (!sessionData) return;
+    const ext = this.sessionExtensions.get(sessionId);
+    if (!ext) return;
 
-    // 1. First try session.location if available
     if (session.location?.latitude && session.location?.longitude) {
       console.log(`📍 Using session.location: ${session.location.latitude}, ${session.location.longitude}`);
-      sessionData.locationObtained = true;
-      sessionData.lastLocation = {
+      ext.locationObtained = true;
+      ext.lastLocation = {
         lat: session.location.latitude,
         lon: session.location.longitude
       };
-      await this.showAirQuality(
-        session, 
-        session.location.latitude, 
-        session.location.longitude, 
-        false
-      );
+      await this.showAirQuality(session, session.location.latitude, session.location.longitude, false);
       return;
     }
 
-    // 2. Try client IP geolocation (respecting Fly.io headers)
     try {
       const clientIp = this.getClientIp(session);
       if (clientIp) {
         const ipLocation = await this.getIpLocation(clientIp);
         console.log(`📍 Using client IP location: ${ipLocation.lat}, ${ipLocation.lon}`);
-        sessionData.locationObtained = true;
-        sessionData.lastLocation = ipLocation;
+        ext.locationObtained = true;
+        ext.lastLocation = ipLocation;
         await this.showAirQuality(session, ipLocation.lat, ipLocation.lon, false);
         return;
       }
@@ -211,7 +204,6 @@ class AirQualityApp extends TpaServer {
       console.error('Client IP geolocation failed:', error);
     }
 
-    // 3. Final fallback with warning
     console.log('⚠️ Using default London location');
     await this.showAirQuality(session, 51.5074, -0.1278, true);
   }
@@ -244,15 +236,12 @@ class AirQualityApp extends TpaServer {
 
   private getClientIp(session: TpaSession): string | null {
     if (!session.request?.headers) return null;
-
     const headers = session.request.headers;
     
-    // Fly.io headers take priority
-    if (headers['fly-client-ip']) {
-      return headers['fly-client-ip'] as string;
+    if (headers['cf-connecting-ip']) {
+      return headers['cf-connecting-ip'] as string;
     }
 
-    // Standard headers
     const xForwardedFor = headers['x-forwarded-for'];
     if (xForwardedFor) {
       return (Array.isArray(xForwardedFor) ? xForwardedFor[0] : xForwardedFor).split(',')[0].trim();
@@ -263,7 +252,6 @@ class AirQualityApp extends TpaServer {
 
   private async getIpLocation(ip: string): Promise<{ lat: number; lon: number }> {
     try {
-      // First try ipapi.co
       const response = await axios.get(`https://ipapi.co/${ip}/json/`, { timeout: 3000 });
       if (response.data.latitude && response.data.longitude) {
         return {
@@ -272,7 +260,6 @@ class AirQualityApp extends TpaServer {
         };
       }
       
-      // Fallback to ip-api.com if ipapi fails
       const fallbackResponse = await axios.get(`http://ip-api.com/json/${ip}`, { timeout: 3000 });
       if (fallbackResponse.data.lat && fallbackResponse.data.lon) {
         return {
@@ -311,8 +298,14 @@ class AirQualityApp extends TpaServer {
       throw error;
     }
   }
+
+  public start(): void {
+    this.expressApp.listen(PORT, () => {
+      console.log(`✅ Air Quality v${APP_VERSION} running on port ${PORT}`);
+    });
+  }
 }
 
-new AirQualityApp().getExpressApp().listen(PORT, () => {
-  console.log(`✅ Air Quality v${APP_VERSION} running on port ${PORT}`);
-});
+// Start the server
+const airQualityApp = new AirQualityApp();
+airQualityApp.start();
