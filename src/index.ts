@@ -1,27 +1,5 @@
-// Version: 1.3.4
-// Fixed util polyfill implementation
-
-// SAFE Polyfill implementation - doesn't modify imports
-function setupUtils() {
-  const nodeUtil = require('util');
-  const { inherits } = nodeUtil;
-  
-  // Create new util object with inherits
-  const customUtil = {
-    ...nodeUtil,
-    inherits
-  };
-
-  // Apply to globalThis if needed
-  if (typeof globalThis !== 'undefined') {
-    (globalThis as any).util = customUtil;
-  }
-
-  return customUtil;
-}
-
-// Initialize utils
-const util = setupUtils();
+// Version: 1.3.5
+// Removed unnecessary util polyfill - using native implementation
 
 // Core dependencies
 import 'dotenv/config';
