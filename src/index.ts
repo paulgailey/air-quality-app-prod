@@ -1,16 +1,24 @@
 // Version: 1.2.4
 // Description: Air Quality Augmentos App - Cloudflare Optimized
 // Polyfill for legacy Node.js APIs
-// Import global polyfill first (ensure it runs before any other imports)
-import './global-polyfill';
 
-// Then your existing polyfill
-import './polyfills';
+// Import the inherits function
+import { inherits as inheritsFn } from 'util-deprecate';
 
-// Then explicitly patch util.inherits as you were doing before
-import { inherits } from 'util-deprecate';
+// Import util as a namespace
 import * as util from 'util';
-util.inherits = inherits;
+
+// Patch util.inherits using a different approach since
+// directly assigning to imports isn't allowed in ES modules
+(util as any).inherits = inheritsFn;
+
+// Add global polyfill
+if (typeof globalThis !== 'undefined') {
+  if (typeof (globalThis as any).util === 'undefined') {
+    (globalThis as any).util = {};
+  }
+  (globalThis as any).util.inherits = inheritsFn;
+}
 
 import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
