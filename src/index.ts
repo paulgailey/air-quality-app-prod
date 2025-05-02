@@ -1,26 +1,17 @@
-// Version: 1.4.3 - Final working solution
-import 'dotenv/config';
+// Version: 2.0.0 - Cloudflare Pages Compatible
 import express, { Request, Response, NextFunction } from 'express';
+import { fileURLToPath } from 'url';
 import path from 'path';
-import { readFileSync } from 'fs';
-import axios, { AxiosError } from 'axios';
+import axios from 'axios';
 import crypto from 'crypto';
 import { TpaServer, TpaSession, ViewType } from '@augmentos/sdk';
 
-// Windows-compatible __dirname replacement
-const getDirname = () => {
-  const urlPath = new URL(import.meta.url).pathname;
-  // Fix Windows paths (C:/ instead of /C:/)
-  const fixedPath = urlPath.startsWith('/') && /^\/[A-Za-z]:/.test(urlPath) 
-    ? urlPath.slice(1) 
-    : urlPath;
-  return path.dirname(fixedPath);
-};
+// ESM compatible dirname (replacing __dirname)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // App configuration
-const packageJsonPath = path.join(__dirname, '..', 'package.json');
-const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
-const APP_VERSION = packageJson.version;
+const APP_VERSION = '2.0.0';
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const PACKAGE_NAME = process.env.PACKAGE_NAME || 'air-quality-app';
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY || '';
@@ -107,9 +98,6 @@ class AirQualityApp extends TpaServer {
 
     // Add basic headers
     this.expressApp.use((req: Request, res: Response, next: NextFunction) => {
-      req.headers['cf-connecting-ip'] = req.headers['cf-connecting-ip'] || req.ip;
-      req.headers['x-device-latitude'] = req.headers['x-device-latitude'] || '';
-      req.headers['x-device-longitude'] = req.headers['x-device-longitude'] || '';
       res.set('X-Request-ID', crypto.randomUUID());
       next();
     });
@@ -150,7 +138,7 @@ class AirQualityApp extends TpaServer {
             packageName: PACKAGE_NAME
           });
           res.json({ status: 'success' });
-        } catch (err: unknown) {
+        } catch (err) {
           console.error('Session init failed:', err);
           res.status(500).json({ status: 'error' });
         }
@@ -208,13 +196,14 @@ class AirQualityApp extends TpaServer {
     }
 
     try {
-      const fallbackLoc = await this.getIpLocationFromSession(session);
-      if (fallbackLoc) {
+      // Check for Cloudflare geolocation headers
+      const geoInfo = await this.getLocationInfo(session);
+      if (geoInfo) {
         ext.locationObtained = true;
-        ext.lastLocation = fallbackLoc;
-        return this.showAirQuality(session, fallbackLoc.lat, fallbackLoc.lon, false);
+        ext.lastLocation = geoInfo;
+        return this.showAirQuality(session, geoInfo.lat, geoInfo.lon, false);
       }
-    } catch (error: unknown) {
+    } catch (error) {
       console.error('Location fallback failed:', error);
     }
 
@@ -222,7 +211,16 @@ class AirQualityApp extends TpaServer {
     await this.showAirQuality(session, 51.5074, -0.1278, true);
   }
 
-  private async getIpLocationFromSession(session: TpaSession): Promise<{ lat: number; lon: number } | null> {
+  private async getLocationInfo(session: TpaSession): Promise<{ lat: number; lon: number } | null> {
+    // Fallback to environment-provided location
+    if (process.env.DEFAULT_LAT && process.env.DEFAULT_LON) {
+      const lat = parseFloat(process.env.DEFAULT_LAT);
+      const lon = parseFloat(process.env.DEFAULT_LON);
+      if (!isNaN(lat) && !isNaN(lon)) {
+        return { lat, lon };
+      }
+    }
+    
     return null;
   }
 
@@ -245,7 +243,7 @@ class AirQualityApp extends TpaServer {
         view: ViewType.MAIN,
         durationMs: 15000
       });
-    } catch (error: unknown) {
+    } catch (error) {
       console.error("Air quality check failed:", error);
       await session.layouts.showTextWall("⚠️ Couldn't retrieve air quality data.", {
         view: ViewType.MAIN,
@@ -272,9 +270,8 @@ class AirQualityApp extends TpaServer {
           geo: data.city?.geo || [lat, lon]
         }
       };
-    } catch (error: unknown) {
-      const axiosError = error as AxiosError;
-      console.error('AQI station fetch failed:', axiosError.message);
+    } catch (error) {
+      console.error('AQI station fetch failed:', error instanceof Error ? error.message : String(error));
       throw error;
     }
   }
@@ -289,7 +286,7 @@ class AirQualityApp extends TpaServer {
         reject(error);
       });
 
-      process.on('unhandledRejection', (error: unknown) => {
+      process.on('unhandledRejection', (error) => {
         console.error('Unhandled rejection:', error);
       });
     });
