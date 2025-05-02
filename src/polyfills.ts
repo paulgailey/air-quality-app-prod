@@ -1,7 +1,7 @@
 // src/polyfills.ts
 // Simple polyfill for util.inherits
 
-import { inherits as inheritsFn } from 'util-deprecate';
+import { inherits as inheritsFn } from 'util';
 
 // Apply polyfills to global scope
 if (typeof globalThis !== 'undefined') {
