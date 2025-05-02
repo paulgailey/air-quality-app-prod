@@ -2,11 +2,14 @@
 // Description: Air Quality Augmentos App - Cloudflare Optimized
 // Polyfill for legacy Node.js APIs
 
-// Import util as a namespace
+// Import util as a namespace and default
 import * as util from 'util';
-
+import utilDefault from 'util';
 import { inherits as inheritsFn } from 'util-deprecate';
+
+// Apply polyfill to both import styles
 (util as any).inherits = inheritsFn;
+(utilDefault as any).inherits = inheritsFn;
 
 // Add global polyfill
 if (typeof globalThis !== 'undefined') {
@@ -23,6 +26,9 @@ import { TpaServer, TpaSession, ViewType } from '@augmentos/sdk';
 import axios from 'axios';
 import crypto from 'crypto';
 import { readFileSync } from 'fs';
+
+// Get __dirname equivalent for ES modules
+const __dirname = path.dirname(new URL(import.meta.url).pathname);
 
 // Configuration
 const packageJson = JSON.parse(
@@ -319,9 +325,23 @@ class AirQualityApp extends TpaServer {
     this.expressApp.listen(PORT, () => {
       console.log(`✅ Air Quality v${APP_VERSION} running on port ${PORT}`);
     });
+
+    // Error handling
+    process.on('unhandledRejection', (error) => {
+      console.error('Unhandled rejection:', error);
+    });
+
+    process.on('uncaughtException', (error) => {
+      console.error('Uncaught exception:', error);
+    });
   }
 }
 
 // Start the server
-const airQualityApp = new AirQualityApp();
-airQualityApp.start();
+try {
+  const airQualityApp = new AirQualityApp();
+  airQualityApp.start();
+} catch (error) {
+  console.error('Failed to start server:', error);
+  process.exit(1);
+}
