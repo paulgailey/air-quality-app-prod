@@ -1,10 +1,17 @@
 // Version: 1.2.4
 // Description: Air Quality Augmentos App - Cloudflare Optimized
 // Polyfill for legacy Node.js APIs
+// Import global polyfill first (ensure it runs before any other imports)
+import './global-polyfill';
+
+// Then your existing polyfill
 import './polyfills';
+
+// Then explicitly patch util.inherits as you were doing before
 import { inherits } from 'util-deprecate';
 import * as util from 'util';
 util.inherits = inherits;
+
 import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
