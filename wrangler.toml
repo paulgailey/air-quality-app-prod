@@ -1,0 +1,28 @@
+name = "air-quality-app-prod"
+compatibility_date = "2024-05-03"
+main = "./dist/index.js"
+usage_model = "bundled"
+
+# Node.js compatibility (NEW in Wrangler v4)
+compatibility_flags = ["nodejs_compat"]  # Replaces deprecated `node_compat`
+
+[build]
+command = """
+  bun install --frozen-lockfile && \
+  bun add ws@latest util-deprecate@latest && \
+  bun run build --target node
+"""
+
+[vars]
+CONFIG_VERSION = "v1.0"
+
+# Required for ESM modules
+[build.upload]
+format = "modules"
+module_rules = [
+  { type = "ESModule", globs = ["**/*.js"] }
+]
+
+# Secrets reference (set via `wrangler secret put`)
+[env]
+API_KEY = "{{ secrets.API_KEY }}"
