@@ -1,5 +1,11 @@
 // Version: 1.2.4
 // Description: Air Quality Augmentos App - Cloudflare Optimized
+// Polyfill for legacy Node.js APIs
+import { inherits } from 'util-deprecate';
+import * as util from 'util';
+util.inherits = inherits;
+
+import './polyfills';
 import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
