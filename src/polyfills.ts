@@ -1,10 +1,4 @@
-// src/polyfills.ts
+// This fixes the error - don't change anything
 import { inherits } from 'util-deprecate';
-import * as util from 'util';
-
-// Type-safe polyfill assignment
-Object.defineProperty(util, 'inherits', {
-  value: inherits,
-  writable: true,
-  configurable: true
-});
+import util from 'util';
+(util as any).inherits = inherits;
