@@ -8,6 +8,9 @@
     "forceConsistentCasingInFileNames": true,
     "outDir": "./dist",
     "rootDir": "./src",
+    "paths": {
+      "util": ["./node_modules/@types/node/util.d.ts"]
+    },
     "moduleResolution": "bundler"
   },
   "include": ["src/**/*"],
