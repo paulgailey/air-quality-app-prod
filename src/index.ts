@@ -156,13 +156,13 @@ class AirQualityApp extends TpaServer {
     console.log(`New session ${sessionId} started for user ${userId}`);
 
     session.events.onLocation(async coords => {
-      console.log(`📍 Got location: ${coords.lat}, ${coords.lon}`);
+      console.log(`📍 Got location: ${coords.lat}, ${coords.lng}`);
       const ext = this.sessionExtensions.get(sessionId);
       if (ext) {
         ext.locationObtained = true;
-        ext.lastLocation = { lat: coords.lat, lon: coords.lon };
+        ext.lastLocation = { lat: coords.lat, lon: coords.lng };
       }
-      await this.showAirQuality(session, coords.lat, coords.lon, false);
+      await this.showAirQuality(session, coords.lat, coords.lng, false);
     });
 
     session.events.onTranscription(async ({ language, text }) => {
