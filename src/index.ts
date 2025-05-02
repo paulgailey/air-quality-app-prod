@@ -1,7 +1,4 @@
-// Version: 1.3.9
-// Complete solution with full TypeScript typing
-
-// Core dependencies
+// Version: 1.4.3 - Final working solution
 import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
@@ -9,10 +6,16 @@ import { readFileSync } from 'fs';
 import axios, { AxiosError } from 'axios';
 import crypto from 'crypto';
 import { TpaServer, TpaSession, ViewType } from '@augmentos/sdk';
-import { fileURLToPath } from 'url';
 
-// Node.js compatible __dirname replacement
-const __dirname = path.dirname(new URL(import.meta.url).pathname);
+// Windows-compatible __dirname replacement
+const getDirname = () => {
+  const urlPath = new URL(import.meta.url).pathname;
+  // Fix Windows paths (C:/ instead of /C:/)
+  const fixedPath = urlPath.startsWith('/') && /^\/[A-Za-z]:/.test(urlPath) 
+    ? urlPath.slice(1) 
+    : urlPath;
+  return path.dirname(fixedPath);
+};
 
 // App configuration
 const packageJsonPath = path.join(__dirname, '..', 'package.json');
@@ -297,7 +300,7 @@ class AirQualityApp extends TpaServer {
 try {
   const airQualityApp = new AirQualityApp();
   airQualityApp.start();
-} catch (error: unknown) {
+} catch (error) {
   console.error('Failed to start server:', error);
   process.exit(1);
 }
