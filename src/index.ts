@@ -6,7 +6,6 @@
 import * as util from 'util';
 
 import { inherits as inheritsFn } from 'util-deprecate';
-import * as util from 'util';
 (util as any).inherits = inheritsFn;
 
 // Add global polyfill
