@@ -1,4 +1,4 @@
-// Version: 2.0.0 - Cloudflare Pages Compatible
+// Version: 2.0.0 - Cloudflare Pages Deployed VERSION
 import express, { Request, Response, NextFunction } from 'express';
 import { fileURLToPath } from 'url';
 import path from 'path';
