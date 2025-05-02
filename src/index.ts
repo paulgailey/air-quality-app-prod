@@ -2,14 +2,11 @@
 // Description: Air Quality Augmentos App - Cloudflare Optimized
 // Polyfill for legacy Node.js APIs
 
-// Import the inherits function
-import { inherits as inheritsFn } from 'util-deprecate';
-
 // Import util as a namespace
 import * as util from 'util';
 
-// Patch util.inherits using a different approach since
-// directly assigning to imports isn't allowed in ES modules
+import { inherits as inheritsFn } from 'util-deprecate';
+import * as util from 'util';
 (util as any).inherits = inheritsFn;
 
 // Add global polyfill
