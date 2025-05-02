@@ -1,14 +1,27 @@
-// Version: 1.3.3
-// Improved readability, structure, and type safety
+// Version: 1.3.4
+// Fixed util polyfill implementation
 
-// Polyfill setup (for environments like V8 isolates)
-import * as util from 'util';
-import { inherits as inheritsFn } from 'util';
+// SAFE Polyfill implementation - doesn't modify imports
+function setupUtils() {
+  const nodeUtil = require('util');
+  const { inherits } = nodeUtil;
+  
+  // Create new util object with inherits
+  const customUtil = {
+    ...nodeUtil,
+    inherits
+  };
 
-const enhancedUtil = { ...util, inherits: inheritsFn };
-if (typeof globalThis !== 'undefined') {
-  (globalThis as any).util = enhancedUtil;
+  // Apply to globalThis if needed
+  if (typeof globalThis !== 'undefined') {
+    (globalThis as any).util = customUtil;
+  }
+
+  return customUtil;
 }
+
+// Initialize utils
+const util = setupUtils();
 
 // Core dependencies
 import 'dotenv/config';
@@ -19,10 +32,10 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { TpaServer, TpaSession, ViewType } from '@augmentos/sdk';
 
-// __dirname for ESM
+// Get __dirname for ESM
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 
-// App metadata
+// App configuration
 const packageJson = JSON.parse(readFileSync(path.join(__dirname, '../package.json'), 'utf-8'));
 const APP_VERSION = packageJson.version;
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -30,7 +43,7 @@ const PACKAGE_NAME = process.env.PACKAGE_NAME || 'air-quality-app';
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY || '';
 const AQI_TOKEN = process.env.AQI_TOKEN || '';
 
-// Validate env
+// Validate environment
 if (!AUGMENTOS_API_KEY || !AQI_TOKEN) {
   console.error('❌ Missing required environment variables');
   process.exit(1);
@@ -135,7 +148,6 @@ class AirQualityApp extends TpaServer {
 
   private async createSession({ sessionId, userId }: { sessionId: string; userId: string }): Promise<void> {
     console.log(`Creating session for ${userId} with ID ${sessionId}`);
-    // Reserved for future use
   }
 
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
@@ -168,7 +180,6 @@ class AirQualityApp extends TpaServer {
       }
     });
 
-    // Auto-trigger after 1s if no interaction
     setTimeout(() => {
       this.handleAirQualityRequest(session, sessionId).catch(console.error);
     }, 1000);
@@ -198,7 +209,7 @@ class AirQualityApp extends TpaServer {
   }
 
   private async getIpLocationFromSession(session: TpaSession): Promise<{ lat: number; lon: number } | null> {
-    // Placeholder — extend with IP geolocation logic
+    // Implement your IP geolocation logic here
     return null;
   }
 
@@ -269,4 +280,13 @@ class AirQualityApp extends TpaServer {
       });
     });
   }
+}
+
+// Start the server
+try {
+  const airQualityApp = new AirQualityApp();
+  airQualityApp.start();
+} catch (error) {
+  console.error('Failed to start server:', error);
+  process.exit(1);
 }
