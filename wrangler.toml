@@ -1,7 +1,11 @@
 name = "air-quality-app-prod"
 main = "./dist/index.js"
-compatibility_date = "2024-09-23"  # Updated for Node.js core modules
-compatibility_flags = ["nodejs_compat"]
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat", "websocket_outbound"]
 
 [build]
-command = "bun build ./src/index.ts --outfile ./dist/index.js --target node --format esm"  # Added ESM format
+command = "bun build ./src/index.ts --outfile ./dist/index.js --target node --format esm"
+
+[[routes]]
+pattern = "air-quality.everywoah.com/*"
+zone_name = "everywoah.com"
