@@ -4,7 +4,7 @@
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "build": "bun build ./src/index.ts --outfile ./dist/index.js --target node",
+    "build": "bun build ./src/index.ts --outfile ./dist/index.js --target node --format esm",
     "start": "bun run ./dist/index.js",
     "dev": "bun --watch run ./src/index.ts",
     "prebuild": "rm -rf ./dist"

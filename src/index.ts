@@ -1,10 +1,13 @@
 // Version: 2.0.0 - Cloudflare Pages Deployed VERSION
-import express, { Request, Response, NextFunction } from 'express';
-import { fileURLToPath } from 'url';
-import path from 'path';
-import axios from 'axios';
-import crypto from 'crypto';
-import { TpaServer, TpaSession, ViewType } from '@augmentos/sdk';
+// Core Node.js modules (correctly prefixed)
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import crypto from "node:crypto";
+
+// External dependencies
+import express, { Request, Response, NextFunction } from "express";
+import axios from "axios";
+import { TpaServer, TpaSession, ViewType } from "@augmentos/sdk";
 
 // ESM compatible dirname (replacing __dirname)
 const __filename = fileURLToPath(import.meta.url);
