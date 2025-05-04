@@ -1,3 +1,4 @@
 # air-quality-app-prod2
+
 Cloudflare production release
-"workers-refactor branch because Claude: "your Express app isn't compatible with the Cloudflare Workers runtime environment. Workers expects a specific export format, but your code is structured as a Node.js application.....significant refactoring to make your Express app work in the Workers environment."....significant refactoring to make your Express app work in the Workers environment."
+"workers-refactor branch because Claude: your Express app isn't compatible with the Cloudflare Workers runtime environment. Workers expects a specific export format, but your code is structured as a Node.js application.....significant refactoring to make your Express app work in the Workers environment.....significant refactoring to make your Express app work in the Workers environment."
