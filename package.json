@@ -12,16 +12,12 @@
   "dependencies": {
     "@augmentos/sdk": "^1.1.4",
     "axios": "^1.8.4",
-    "dotenv": "^16.5.0",
-    "express": "^4.21.2",
-    "ws": "^8.18.1"
+    "dotenv": "^16.5.0"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
-    "@types/node": "^22.15.3",
-    "nodemon": "^3.0.2",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.8.3"
+    "@cloudflare/workers-types": "^4.20250504.0",
+    "typescript": "^5.8.3",
+    "wrangler": "^4.14.1"
   },
   "engines": {
     "node": ">=18.0.0"
