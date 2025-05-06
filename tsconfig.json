@@ -1,13 +1,19 @@
 ﻿{
   "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@augmentos/sdk": ["node_modules/@augmentos/sdk/dist/index.js"],
+      "@augmentos/sdk/*": ["node_modules/@augmentos/sdk/dist/*"]
+    },
     "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "esModuleInterop": true,
     "outDir": "./dist",
-    "strict": true,
     "noImplicitAny": true,
     "skipLibCheck": true,
+    "types": ["@cloudflare/workers-types"],
+    "strict": true,
     "forceConsistentCasingInFileNames": true
   },
   "include": ["src/**/*"],

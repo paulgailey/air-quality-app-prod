@@ -1,14 +1,26 @@
-name = "air-quality-app-prod"
+name = "air-quality-app-prod2"
 main = "./dist/index.js"
-compatibility_date = "2024-09-23"
-compatibility_flags = ["nodejs_compat", "websocket_outbound"]
-
+compatibility_date = "2024-05-01"
+compatibility_flags = ["nodejs_compat"]
 account_id = "fe1b6d9276e7ce4ea4d7f12073d9fbbe"
 
-
 [build]
-command = "bun build ./src/index.ts --outfile ./dist/index.js --target node --format esm"
+command = "bun install && bun build ./src/index.ts --outfile ./dist/index.js --target node --format esm"
+watch_dir = "src"
+
+[vars]
+NODE_ENV = "production"
+PACKAGE_NAME = "air-quality-app"
+CF_ALLOWED_HEADERS = "X-Device-Latitude,X-Device-Longitude,X-Device-ID,X-App-Version"
+
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "f0e3d6a06c2c46abb110763aa60b29fa"
+preview_id = "f8e86eddc46748e68092ee417b2ae078"
 
 [[routes]]
 pattern = "air-quality.everywoah.com/*"
 zone_name = "everywoah.com"
+
+[observability.logs]
+enabled = true

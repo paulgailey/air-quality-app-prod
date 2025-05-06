@@ -1,0 +1,6 @@
+[install]
+# Force exact package structure
+
+[module]
+# Explicit module resolution
+exports = { "@augmentos/sdk" = "./node_modules/@augmentos/sdk/dist/index.js" }

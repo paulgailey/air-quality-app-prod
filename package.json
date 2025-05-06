@@ -1,29 +1,31 @@
 {
-  "name": "air-quality-app-prod",
+  "name": "air-quality-app-prod2",
   "version": "2.0.0",
-  "main": "dist/index.js",
+  "main": "src/index.ts",
   "type": "module",
   "scripts": {
-    "build": "bun build ./src/index.ts --outfile ./dist/index.js --target node --format esm",
-    "start": "bun run ./dist/index.js",
+    "build": "bun build ./src/index.ts --outfile ./dist/index.js --target browser --format esm",
+    "start": "wrangler dev",
     "dev": "bun --watch run ./src/index.ts",
-    "prebuild": "rm -rf ./dist"
+    "prebuild": "rm -rf ./dist",
+    "deploy": "wrangler deploy"
   },
   "dependencies": {
-    "@augmentos/sdk": "^1.1.4",
-    "axios": "^1.8.4",
+    "@augmentos/sdk": "1.1.5",
+    "axios": "^1.9.0",
     "dotenv": "^16.5.0",
-    "express": "^4.21.2",
-    "ws": "^8.18.1"
+    "itty-router": "^5.0.18",
+    "jsonwebtoken": "9.0.2"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
-    "@types/node": "^22.15.3",
-    "nodemon": "^3.0.2",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.8.3"
+    "@cloudflare/workers-types": "^4.20250505.0",
+    "typescript": "^5.8.3",
+    "wrangler": "^4.14.1"
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "overrides": {
+    "jsonwebtoken": "9.0.2"
   }
 }
