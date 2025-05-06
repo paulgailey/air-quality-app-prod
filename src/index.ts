@@ -1,4 +1,4 @@
-// src/index.ts
+// src/index.ts # minimal setup to check Worker OK
 
 export default {
   async fetch(request: Request): Promise<Response> {
