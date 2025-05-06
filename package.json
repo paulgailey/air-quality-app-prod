@@ -4,14 +4,14 @@
   "main": "src/index.ts",
   "type": "module",
   "scripts": {
-   "build": "bun build ./src/index.ts --outfile ./dist/index.js --target node --format esm",
+    "build": "bun build ./src/index.ts --outfile ./dist/index.js --target node --format esm",
     "start": "wrangler dev",
     "dev": "bun --watch run ./src/index.ts",
     "prebuild": "rm -rf ./dist",
     "deploy": "wrangler deploy"
   },
   "dependencies": {
-    "@augmentos/sdk": "1.1.5",
+    "@augmentos/sdk": "^1.1.5",
     "axios": "^1.9.0",
     "dotenv": "^16.5.0",
     "itty-router": "^5.0.18",

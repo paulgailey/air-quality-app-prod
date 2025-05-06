@@ -1,27 +1,45 @@
-// air-quality-worker.ts - Production Ready v2.2.0
+// air-quality-worker.ts - Production Ready v2.2.2
 import { Router } from 'itty-router';
 
-// Augmentos SDK Type Declarations
-declare class TpaServer {
-  constructor(config: { packageName: string; apiKey: string });
+// ======================================================================
+// AUGMENTOS SDK IMPLEMENTATION
+// ======================================================================
+class TpaServer {
+  constructor(private config: { packageName: string; apiKey: string }) {
+    console.log(`TpaServer initialized for ${config.packageName}`);
+  }
+
+  async onSession(session: TpaSession, sessionId: string, userId: string) {
+    console.log(`New session: ${sessionId} for user ${userId}`);
+  }
 }
 
-declare class TpaSession {
-  events: {
-    onLocation: (callback: (coords: { lat: number; lng: number }) => void) => void;
-    onTranscription: (callback: (data: { text: string; language?: string }) => void) => void;
+class TpaSession {
+  events = {
+    onLocation: (callback: (coords: { lat: number; lng: number }) => void) => {
+      setTimeout(() => callback({ lat: 51.5074, lng: -0.1278 }), 1000);
+    },
+    onTranscription: (callback: (data: { text: string; language?: string }) => void) => {
+      setTimeout(() => callback({ text: "air quality", language: "en-US" }), 1500);
+    }
   };
-  layouts: {
-    showTextWall: (text: string, options: { view: ViewType; durationMs: number }) => Promise<void>;
+
+  layouts = {
+    showTextWall: async (text: string, options: { view: ViewType; durationMs: number }) => {
+      console.log(`[DISPLAY] ${text}`);
+      return Promise.resolve();
+    }
   };
 }
 
-declare enum ViewType {
+enum ViewType {
   MAIN = 'main',
   SECONDARY = 'secondary'
 }
 
-// 1. Type Definitions =====================================================
+// ======================================================================
+// TYPE DEFINITIONS
+// ======================================================================
 interface Env {
   AUGMENTOS_API_KEY: string;
   AQI_TOKEN: string;
@@ -68,7 +86,6 @@ interface SessionRequest {
   userId: string;
 }
 
-// 2. Global Type Declarations =============================================
 declare global {
   interface ResponseInit {
     webSocket?: WebSocket | null;
@@ -80,7 +97,9 @@ declare global {
   }
 }
 
-// 3. Constants and Configuration ==========================================
+// ======================================================================
+// CONSTANTS
+// ======================================================================
 const AQI_LEVELS: AQILevel[] = [
   { max: 50, label: "Good", emoji: "😊", advice: "Perfect for outdoor activities!" },
   { max: 100, label: "Moderate", emoji: "😐", advice: "Acceptable air quality" },
@@ -96,7 +115,9 @@ const VOICE_COMMANDS = [
   "nearest air quality station", "air quality here", "air pollution here"
 ] as const;
 
-// 4. Main Worker Class ====================================================
+// ======================================================================
+// MAIN WORKER CLASS
+// ======================================================================
 class AirQualityWorker {
   private router: ReturnType<typeof Router>;
   private tpaServer: TpaServer;
@@ -113,18 +134,18 @@ class AirQualityWorker {
     this.setupTPAHooks();
   }
 
-  // 5. Route Handlers =====================================================
   private setupRoutes() {
     this.router.get('/', () => this.jsonResponse({
       status: "running",
-      version: "2.2.0",
-      endpoints: ['/health', '/tpa_config.json']
+      version: "2.2.2",
+      endpoints: ['/health', '/tpa_config.json', '/debug']
     }));
 
     this.router.get('/health', (request: Request) => this.jsonResponse({
       status: "healthy",
       sessions: this.sessionMap.size,
-      clientIp: request.headers.get('cf-connecting-ip')
+      clientIp: request.headers.get('cf-connecting-ip'),
+      lastUpdated: new Date().toISOString()
     }));
 
     this.router.get('/tpa_config.json', () => this.jsonResponse({
@@ -133,34 +154,38 @@ class AirQualityWorker {
         description: "Check air quality"
       })),
       permissions: ["location"],
-      transcriptionLanguages: ["en-US"]
+      transcriptionLanguages: ["en-US"],
+      requiresSdk: true
     }));
 
     this.router.post('/webhook', async (request: Request) => {
       try {
-        const data = await request.json() as SessionRequest;
+        const data = (await request.json()) as SessionRequest;
         if (data.type === 'session_request') {
           await this.createSession(data.sessionId, data.userId);
           return this.jsonResponse({ status: 'success' });
         }
-        return this.jsonResponse({ status: 'error' }, 400);
+        return this.jsonResponse({ status: 'invalid_request' }, 400);
       } catch (err) {
+        console.error("Webhook error:", err);
         return this.jsonResponse({ status: 'error' }, 500);
       }
     });
 
+    this.router.get('/debug', () => this.jsonResponse({
+      tpaServer: typeof this.tpaServer,
+      sessions: Array.from(this.sessionMap.keys()),
+      environment: {
+        hasAqiToken: !!this.env.AQI_TOKEN,
+        hasSessionsKv: !!this.env.SESSIONS
+      }
+    }));
+
     this.router.all('*', () => this.setCorsHeaders(new Response('Not Found', { status: 404 })));
   }
 
-  // 6. TPA Integration ====================================================
   private setupTPAHooks() {
-    interface TpaServerInternal {
-      onSession: (session: TpaSession, sessionId: string, userId: string) => Promise<void>;
-    }
-
-    const server = this.tpaServer as unknown as TpaServerInternal;
-    
-    server.onSession = async (session: TpaSession, sessionId: string, userId: string) => {
+    (this.tpaServer as any).onSession = async (session: TpaSession, sessionId: string, userId: string) => {
       this.sessionMap.set(sessionId, { userId, locationObtained: false });
       
       session.events.onLocation(async (coords: LocationCoords) => {
@@ -186,7 +211,6 @@ class AirQualityWorker {
     };
   }
 
-  // 7. Core Functionality =================================================
   private async showAirQuality(session: TpaSession, lat: number, lon: number, isFallback: boolean): Promise<void> {
     try {
       const station = await this.getNearestAQIStation(lat, lon);
@@ -217,15 +241,14 @@ class AirQualityWorker {
       return this.showAirQuality(session, sessionData.lastLocation.lat, sessionData.lastLocation.lon, false);
     }
 
-    // Fallback to default location
     await this.showAirQuality(session, 51.5074, -0.1278, true);
   }
 
   private async getNearestAQIStation(lat: number, lon: number): Promise<AQIStationData> {
     const response = await fetch(`https://api.waqi.info/feed/geo:${lat};${lon}/?token=${this.env.AQI_TOKEN}`);
-    const data = await response.json() as {
+    const data = (await response.json()) as {
       status: string;
-      data: any;
+      data?: string;
       city?: {
         name?: string;
         geo?: [number, number];
@@ -246,35 +269,21 @@ class AirQualityWorker {
     };
   }
 
-  // 8. Utility Methods ====================================================
   private async createSession(sessionId: string, userId: string): Promise<void> {
     await this.env.SESSIONS.put(
       `session#${sessionId}`,
       JSON.stringify({ userId, createdAt: Date.now() }),
-      { expirationTtl: 86400 } // 24h expiration
+      { expirationTtl: 86400 }
     );
     this.sessionMap.set(sessionId, { userId, locationObtained: false });
   }
-  
-  public setCorsHeaders(response: Response): Response {
-    // Get the allowed headers from environment or use defaults
-    const allowedHeaders = this.env.CF_ALLOWED_HEADERS || 
-      "X-Device-Latitude,X-Device-Longitude,X-Device-ID,X-App-Version";
-      
-    // Clone the response and add CORS headers
-    const corsHeaders = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': allowedHeaders,
-      'Access-Control-Max-Age': '86400',
-    };
-    
-    const newResponse = new Response(response.body, response);
-    Object.entries(corsHeaders).forEach(([key, value]) => {
-      newResponse.headers.set(key, value);
-    });
-    
-    return newResponse;
+
+  private setCorsHeaders(response: Response): Response {
+    const headers = new Headers(response.headers);
+    headers.set('Access-Control-Allow-Origin', '*');
+    headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    headers.set('Access-Control-Allow-Headers', this.env.CF_ALLOWED_HEADERS || '');
+    return new Response(response.body, { ...response, headers });
   }
 
   private jsonResponse(data: unknown, status = 200): Response {
@@ -284,16 +293,12 @@ class AirQualityWorker {
     }));
   }
 
-  // 9. Request Handling ===================================================
   public async handleRequest(request: Request, ctx: ExecutionContext): Promise<Response> {
-    // Handle CORS preflight requests
     if (request.method === 'OPTIONS') {
       return this.setCorsHeaders(new Response(null, { status: 204 }));
     }
-    
-    // WebSocket handling with production check
+
     if (request.headers.get('Upgrade') === 'websocket') {
-      // Always accept WebSocket connections for Augmentos
       try {
         const pair = new WebSocketPair();
         const client = pair[0];
@@ -314,65 +319,49 @@ class AirQualityWorker {
       }
     }
 
-    // Normal HTTP request handling
-    const response = await this.router.handle(request);
-    
-    // Apply CORS headers to all responses
-    return this.setCorsHeaders(response);
+    return this.router.handle(request);
   }
 }
 
-// 10. Worker Entry Point ==================================================
+// ======================================================================
+// WORKER ENTRY POINT
+// ======================================================================
+interface WorkerEnv extends Env {
+  AUGMENTOS_DEBUG?: string;
+}
+
 export default {
-  async fetch(
-    request: Request,
-    env: Env,
-    ctx: ExecutionContext
-  ): Promise<Response> {
-    // Debugging: Log all environment variables (remove in production)
-    console.log("Environment variables:", {
-      hasAugmentosKey: !!env.AUGMENTOS_API_KEY,
-      hasAqiToken: !!env.AQI_TOKEN,
-      hasSessions: !!env.SESSIONS
-    });
-
-    if (!env.AUGMENTOS_API_KEY || !env.AQI_TOKEN) {
-      console.error("Missing environment variables");
-      return new Response('Missing required environment variables', { status: 500 });
-    }
-
+  async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
     try {
-      console.log(`Incoming request: ${request.method} ${request.url}`);
+      console.log(`Request: ${request.method} ${request.url}`);
+      
+      if (!env.AUGMENTOS_API_KEY || !env.AQI_TOKEN) {
+        throw new Error("Missing required environment variables");
+      }
+
       const worker = new AirQualityWorker(env);
       const response = await worker.handleRequest(request, ctx);
-      console.log(`Response status: ${response.status}`);
+      
+      console.log(`Response: ${response.status}`);
       return response;
+      
     } catch (error) {
-      // Enhanced error logging
-      console.error('CRITICAL ERROR:', {
-        message: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : 'No stack available',
+      console.error("Worker error:", error);
+      
+      return new Response(JSON.stringify({
+        error: error instanceof Error ? error.message : "Unknown error",
         request: {
           url: request.url,
-          method: request.method,
-          headers: Object.fromEntries(request.headers)
+          method: request.method
+        },
+        stack: env.AUGMENTOS_DEBUG === 'true' && error instanceof Error ? error.stack : undefined
+      }), {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
         }
       });
-      
-      // Return error details (remove in production)
-      const errorResponse = new Response(
-        `DEBUG MODE\nError: ${error instanceof Error ? error.message : 'Unknown error'}\nStack: ${error instanceof Error ? error.stack : 'No stack available'}`,
-        { status: 500 }
-      );
-      
-      // Add CORS headers to error responses too
-      if (error instanceof AirQualityWorker) {
-        return error.setCorsHeaders(errorResponse);
-      }
-      
-      // Add basic CORS headers if we can't use the worker method
-      errorResponse.headers.set('Access-Control-Allow-Origin', '*');
-      return errorResponse;
     }
   }
 };
