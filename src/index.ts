@@ -28,6 +28,7 @@ interface Env {
   SESSIONS: KVNamespace;
   AUGMENTOS_DEBUG?: string;
   AUGMENTOS_WEBSOCKET_URL?: string;
+  CF_ALLOWED_HEADERS?: string;
 }
 
 interface AQILevel {
@@ -148,7 +149,7 @@ class AirQualityWorker {
       }
     });
 
-    this.router.all('*', () => new Response('Not Found', { status: 404 }));
+    this.router.all('*', () => this.setCorsHeaders(new Response('Not Found', { status: 404 })));
   }
 
   // 6. TPA Integration ====================================================
@@ -254,24 +255,45 @@ class AirQualityWorker {
     );
     this.sessionMap.set(sessionId, { userId, locationObtained: false });
   }
+  
+  public setCorsHeaders(response: Response): Response {
+    // Get the allowed headers from environment or use defaults
+    const allowedHeaders = this.env.CF_ALLOWED_HEADERS || 
+      "X-Device-Latitude,X-Device-Longitude,X-Device-ID,X-App-Version";
+      
+    // Clone the response and add CORS headers
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': allowedHeaders,
+      'Access-Control-Max-Age': '86400',
+    };
+    
+    const newResponse = new Response(response.body, response);
+    Object.entries(corsHeaders).forEach(([key, value]) => {
+      newResponse.headers.set(key, value);
+    });
+    
+    return newResponse;
+  }
 
   private jsonResponse(data: unknown, status = 200): Response {
-    return new Response(JSON.stringify(data), {
+    return this.setCorsHeaders(new Response(JSON.stringify(data), {
       status,
       headers: { 'Content-Type': 'application/json' }
-    });
+    }));
   }
 
   // 9. Request Handling ===================================================
   public async handleRequest(request: Request, ctx: ExecutionContext): Promise<Response> {
+    // Handle CORS preflight requests
+    if (request.method === 'OPTIONS') {
+      return this.setCorsHeaders(new Response(null, { status: 204 }));
+    }
+    
     // WebSocket handling with production check
     if (request.headers.get('Upgrade') === 'websocket') {
-      if (this.env.AUGMENTOS_DEBUG === 'true') {
-        // Local development - return simple response
-        return new Response("WebSocket connections are only available in production", { status: 200 });
-      }
-      
-      // Production WebSocket handling
+      // Always accept WebSocket connections for Augmentos
       try {
         const pair = new WebSocketPair();
         const client = pair[0];
@@ -288,12 +310,15 @@ class AirQualityWorker {
         });
       } catch (error) {
         console.error('WebSocket error:', error);
-        return new Response("WebSocket connection failed", { status: 500 });
+        return this.setCorsHeaders(new Response("WebSocket connection failed", { status: 500 }));
       }
     }
 
     // Normal HTTP request handling
-    return this.router.handle(request);
+    const response = await this.router.handle(request);
+    
+    // Apply CORS headers to all responses
+    return this.setCorsHeaders(response);
   }
 }
 
@@ -335,10 +360,19 @@ export default {
       });
       
       // Return error details (remove in production)
-      return new Response(
+      const errorResponse = new Response(
         `DEBUG MODE\nError: ${error instanceof Error ? error.message : 'Unknown error'}\nStack: ${error instanceof Error ? error.stack : 'No stack available'}`,
         { status: 500 }
       );
+      
+      // Add CORS headers to error responses too
+      if (error instanceof AirQualityWorker) {
+        return error.setCorsHeaders(errorResponse);
+      }
+      
+      // Add basic CORS headers if we can't use the worker method
+      errorResponse.headers.set('Access-Control-Allow-Origin', '*');
+      return errorResponse;
     }
   }
 };
