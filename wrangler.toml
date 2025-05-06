@@ -2,7 +2,7 @@ name = "air-quality-app-prod2"
 main = "dist/index.js"
 compatibility_date = "2024-05-01"
 compatibility_flags = ["nodejs_compat"]
-account_id = "${CLOUDFLARE_ACCOUNT_ID}"
+account_id = "${CLOUDFLARE_ACCOUNT_ID}" # Referencing the GitHub secret
 
 [build]
 command = "bun install && bun build ./src/index.ts --outfile ./dist/index.js --target node --format esm"

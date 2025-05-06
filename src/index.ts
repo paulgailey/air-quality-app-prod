@@ -1,4 +1,4 @@
-// air-quality-worker.ts - Production Ready v2.3.1
+// air-quality-worker.ts - Production Ready v2.4.0
 import { Router } from 'itty-router';
 import { TpaServer, TpaSession } from '@augmentos/sdk';
 
@@ -51,7 +51,7 @@ interface SessionRequest {
   userId: string;
 }
 
-// Modified LayoutManager implementation without packageName property
+// Complete LayoutManager implementation
 interface AugmentosLayoutManager {
   showTextWall: (
     text: string,
@@ -68,9 +68,19 @@ interface AugmentosLayoutManager {
   showDoubleTextWall: (text1: string, text2: string) => Promise<void>;
 }
 
-// Fully compliant TpaSession extension
 interface AugmentosTpaSession extends TpaSession {
   layouts: AugmentosLayoutManager;
+}
+
+interface AQIResponse {
+  status: string;
+  data: {
+    aqi: number;
+    city?: {
+      name: string;
+      geo: [number, number];
+    };
+  };
 }
 
 declare global {
@@ -103,7 +113,7 @@ const VOICE_COMMANDS = [
 ] as const;
 
 // ======================================================================
-// MAIN WORKER CLASS (Complete Implementation)
+// MAIN WORKER CLASS (Fixed Implementation)
 // ======================================================================
 class AirQualityWorker {
   private router: ReturnType<typeof Router>;
@@ -124,7 +134,7 @@ class AirQualityWorker {
   private setupRoutes() {
     this.router.get('/', () => this.jsonResponse({
       status: "running",
-      version: "2.3.1",
+      version: "2.4.0",
       endpoints: ['/health', '/tpa_config.json', '/debug']
     }));
 
@@ -177,10 +187,17 @@ class AirQualityWorker {
     };
     
     server.onSession = async (session: AugmentosTpaSession, sessionId: string, userId: string) => {
+      // Store in both Map and KV for redundancy
       this.sessionMap.set(sessionId, { userId, locationObtained: false });
+      await this.env.SESSIONS.put(
+        `session#${sessionId}`,
+        JSON.stringify({ userId, createdAt: Date.now() }),
+        { expirationTtl: 86400 }
+      );
 
       session.events.onLocation(async (coords: LocationCoords) => {
-        const sessionData = this.sessionMap.get(sessionId);
+        const sessionData = this.sessionMap.get(sessionId) || 
+          await this.getSessionFromKV(sessionId);
         if (sessionData) {
           sessionData.locationObtained = true;
           sessionData.lastLocation = { lat: coords.lat, lon: coords.lng };
@@ -191,7 +208,8 @@ class AirQualityWorker {
       session.events.onTranscription(async (transcript: TranscriptionData) => {
         if (transcript.language === 'en-US' &&
           VOICE_COMMANDS.some(cmd => transcript.text.toLowerCase().includes(cmd.toLowerCase()))) {
-          const sessionData = this.sessionMap.get(sessionId);
+          const sessionData = this.sessionMap.get(sessionId) || 
+            await this.getSessionFromKV(sessionId);
           if (sessionData?.lastLocation) {
             await this.showAirQuality(session, sessionData.lastLocation.lat, sessionData.lastLocation.lon, false);
           } else {
@@ -202,9 +220,18 @@ class AirQualityWorker {
     };
   }
 
+  private async getSessionFromKV(sessionId: string): Promise<SessionData | null> {
+    const data = await this.env.SESSIONS.get(`session#${sessionId}`);
+    return data ? JSON.parse(data) : null;
+  }
+
   private async showAirQuality(session: AugmentosTpaSession, lat: number, lon: number, isFallback: boolean): Promise<void> {
     try {
       const station = await this.getNearestAQIStation(lat, lon);
+      if (!station || typeof station.aqi !== 'number') {
+        throw new Error('Invalid station data');
+      }
+
       const quality = AQI_LEVELS.find(level => station.aqi <= level.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
 
       const message = `${isFallback ? '⚠️ ' : '📍 '}${station.station.name}\n\n` +
@@ -225,7 +252,8 @@ class AirQualityWorker {
   }
 
   private async handleAirQualityRequest(session: AugmentosTpaSession, sessionId: string): Promise<void> {
-    const sessionData = this.sessionMap.get(sessionId);
+    const sessionData = this.sessionMap.get(sessionId) || 
+      await this.getSessionFromKV(sessionId);
     if (!sessionData) return;
 
     if (sessionData.lastLocation) {
@@ -236,37 +264,35 @@ class AirQualityWorker {
   }
 
   private async getNearestAQIStation(lat: number, lon: number): Promise<AQIStationData> {
-    const response = await fetch(`https://api.waqi.info/feed/geo:${lat};${lon}/?token=${this.env.AQI_TOKEN}`);
-    const data = (await response.json()) as {
-      status: string;
-      data?: string;
-      city?: {
-        name?: string;
-        geo?: [number, number];
-      };
-      aqi?: number;
-    };
+    try {
+      const response = await fetch(`https://api.waqi.info/feed/geo:${lat};${lon}/?token=${this.env.AQI_TOKEN}`);
+      const data: AQIResponse = await response.json();
 
-    if (data.status !== 'ok') {
-      throw new Error(data.data || 'Station data unavailable');
-    }
-
-    return {
-      aqi: data.aqi || 0,
-      station: {
-        name: data.city?.name || 'Nearest AQI station',
-        geo: data.city?.geo || [lat, lon]
+      if (!data || data.status !== 'ok' || typeof data.data.aqi !== 'number') {
+        throw new Error('Invalid station data');
       }
-    };
+
+      return {
+        aqi: data.data.aqi,
+        station: {
+          name: data.data.city?.name || 'Nearest AQI station',
+          geo: data.data.city?.geo || [lat, lon]
+        }
+      };
+    } catch (error) {
+      console.error('AQI API error:', error);
+      throw new Error('Failed to fetch air quality data');
+    }
   }
 
   private async createSession(sessionId: string, userId: string): Promise<void> {
+    const sessionData = { userId, locationObtained: false };
+    this.sessionMap.set(sessionId, sessionData);
     await this.env.SESSIONS.put(
       `session#${sessionId}`,
-      JSON.stringify({ userId, createdAt: Date.now() }),
+      JSON.stringify({ ...sessionData, createdAt: Date.now() }),
       { expirationTtl: 86400 }
     );
-    this.sessionMap.set(sessionId, { userId, locationObtained: false });
   }
 
   private setCorsHeaders(response: Response): Response {
@@ -315,13 +341,13 @@ class AirQualityWorker {
 }
 
 // ======================================================================
-// WORKER ENTRY POINT
+// WORKER ENTRY POINT (Fixed Implementation)
 // ======================================================================
 interface WorkerEnv extends Env {
   AUGMENTOS_DEBUG?: string;
 }
 
-export default {
+const worker = {
   async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
     try {
       console.log(`Request: ${request.method} ${request.url}`);
@@ -330,8 +356,8 @@ export default {
         throw new Error("Missing required environment variables");
       }
 
-      const worker = new AirQualityWorker(env);
-      const response = await worker.handleRequest(request, ctx);
+      const instance = new AirQualityWorker(env);
+      const response = await instance.handleRequest(request, ctx);
 
       console.log(`Response: ${response.status}`);
       return response;
@@ -356,3 +382,5 @@ export default {
     }
   }
 };
+
+export default worker;
