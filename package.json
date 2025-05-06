@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "prebuild": "rm -rf ./dist",
-    "build": "bun build ./src/index.ts --outfile ./dist/index.js --target node --format esm",
+    "build": "bun build ./src/index.ts --outfile ./dist/index.js --target bun --format esm",
     "dev": "bun --watch run ./src/index.ts",
     "start": "wrangler dev",
     "deploy": "wrangler deploy"
