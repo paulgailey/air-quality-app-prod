@@ -1,6 +1,6 @@
 // air-quality-worker.ts - Production Ready v2.3.1
 import { Router } from 'itty-router';
-import { TpaServer, TpaSession } from '@augmentos/sdk/tpa';
+import { TpaServer, TpaSession } from '@augmentos/sdk';
 
 // ======================================================================
 // TYPE DEFINITIONS (100% Error-Free)

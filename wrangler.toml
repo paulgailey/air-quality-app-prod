@@ -2,7 +2,7 @@ name = "air-quality-app-prod2"
 main = "dist/index.js"
 compatibility_date = "2024-05-01"
 compatibility_flags = ["nodejs_compat"]
-account_id = "fe1b6d9276e7ce4ea4d7f12073d9fbbe"
+account_id = "${CLOUDFLARE_ACCOUNT_ID}"
 
 [build]
 command = "bun install && bun build ./src/index.ts --outfile ./dist/index.js --target node --format esm"

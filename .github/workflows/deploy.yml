@@ -1,16 +1,22 @@
 name: Deploy Worker
+
 on:
   push:
-    branches: [ "workers-refactor" ]
+    branches:
+      - "workers-refactor"  # Make sure this is the correct branch
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    
     steps:
-      - uses: actions/checkout@v4
-      - uses: cloudflare/wrangler-action@v3
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: Set up Wrangler CLI
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           command: deploy
         env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
