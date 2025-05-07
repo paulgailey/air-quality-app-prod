@@ -18,9 +18,9 @@ binding = "SESSIONS"
 id = "f0e3d6a06c2c46abb110763aa60b29fa"
 preview_id = "f8e86eddc46748e68092ee417b2ae078"
 
-[[routes]]
-pattern = "air-quality.everywoah.com/*"
-zone_name = "everywoah.com"
+#[[routes]]
+#pattern = "air-quality.everywoah.com/*"
+#zone_name = "everywoah.com"
 
 [observability.logs]
 enabled = true
